@@ -31,10 +31,9 @@ jobs:
             {
               echo "# Output for $pyfile"
               echo
-              echo '```
-              # Capture both stdout and stderr; never fail the workflow on nonzero exit
+              echo "```"
               python "$pyfile" 2>&1 || true
-              echo '```'
+              echo "```"
             } > "$out"
             echo "Wrote $out"
           done < <(find . -type f -name "*.py" -not -path "./.venv/*" -print0)
