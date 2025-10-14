@@ -39,7 +39,7 @@ jobs:
             mkdir -p "$(dirname "$out")"
             # Write header and opening fence without using literal ``` lines
             printf "# Output for %s\n\n" "$pyfile" > "$out"
-            printf "%s\n" '```
+            printf "%s\n" '```'
             # Run script, capture exit code, avoid failing the job
             if command -v python >/dev/null 2>&1; then
               set +e; python "$pyfile" >> "$out" 2>&1; rc=$?; set -e
