@@ -1,0 +1,20 @@
+name: Run Python Script
+
+on:
+  push:
+    branches:
+      - main  # Trigger on pushes to main branch
+  pull_request:  # Or trigger on pull requests
+
+jobs:
+  run-python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4  # Checks out the code
+      - uses: actions/setup-python@v5  # Sets up Python environment
+        with:
+          python-version: '3.10'  # Specify Python version
+      - name: Install dependencies
+        run: pip install -r requirements.txt  # Optional, if you have dependencies
+      - name: Run Python Script
+        run: python your_script.py  # Replace with your script filename
