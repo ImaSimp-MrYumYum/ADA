@@ -1,20 +1,25 @@
-name: Run Python Script
+name: Run All Python Scripts
 
 on:
   push:
     branches:
-      - main  # Trigger on pushes to main branch
-  pull_request:  # Or trigger on pull requests
+      - main
+  pull_request:
 
 jobs:
   run-python:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4  # Checks out the code
-      - uses: actions/setup-python@v5  # Sets up Python environment
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'  # Specify Python version
+          python-version: '3.10'
       - name: Install dependencies
-        run: pip install -r .github/workflows/requirements.txt  # Optional, if you have dependencies
-      - name: Run Python Script
-        run: python test_sample.py  # Replace with your script filename
+        run: |
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Run all Python files
+        run: |
+          for pyfile in $(find . -name "*.py" -not -path "./.venv/*"); do
+            echo "Running $pyfile"
+            python "$pyfile"
+          done
