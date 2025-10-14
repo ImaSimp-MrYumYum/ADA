@@ -1,4 +1,4 @@
-name: Run All Python Scripts
+name: Run All Python Scripts (per-file outputs)
 
 on:
   push:
@@ -6,40 +6,71 @@ on:
   pull_request:
 
 permissions:
-  contents: write  # allow committing generated outputs [web:23]
+  contents: write  # required to push generated files back [web:2]
 
 jobs:
   run-python:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}  # needed for PRs to commit back to the PR branch [web:23]
-      - uses: actions/setup-python@v5
+          # For PRs, ensure commits go back to the PR branch
+          ref: ${{ github.head_ref }}  # no effect on push, helpful on PRs from same repo [web:2]
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.10'  # adjust if needed [web:2]
+
       - name: Install dependencies
         run: |
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        shell: bash
 
       - name: Run each .py and write per-file outputs
         shell: bash
         run: |
+          set -eo pipefail
+          echo "Repo root:"; pwd
+          echo "Python version:"; python --version || python3 --version || true
+          # Find and process all .py excluding .venv
           while IFS= read -r -d '' pyfile; do
             out="${pyfile}.out.md"
             mkdir -p "$(dirname "$out")"
             {
-              echo "# Output for $pyfile"
-              echo
-              echo "```"
-              python "$pyfile" 2>&1 || true
-              echo "```"
+              printf "# Output for %s\n\n" "$pyfile"
+              echo '```
+              # Run script and capture both stdout and stderr; don't fail the job on script errors
+              if command -v python >/dev/null 2>&1; then
+                set +e
+                python "$pyfile" 2>&1
+                rc=$?
+                set -e
+              else
+                set +e
+                python3 "$pyfile" 2>&1
+                rc=$?
+                set -e
+              fi
+              printf "\n(exit code: %d)\n" "$rc"
+              echo '```'
             } > "$out"
             echo "Wrote $out"
           done < <(find . -type f -name "*.py" -not -path "./.venv/*" -print0)
+
+      - name: Verify generated outputs
+        shell: bash
+        run: |
+          echo "Changed files:"
+          git status --porcelain
+          echo "Listing outputs:"
+          find . -type f -name "*.py.out.md" -not -path "./.venv/*" -print
 
       - name: Commit outputs
         uses: stefanzweifel/git-auto-commit-action@v6
         with:
           commit_message: "chore: update per-file Python outputs"
           file_pattern: "**/*.py.out.md"
+          # disable_globbing avoids the shell interfering with the glob; action expands it internally
+          disable_globbing: true
