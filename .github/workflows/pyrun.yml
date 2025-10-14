@@ -17,4 +17,4 @@ jobs:
       - name: Install dependencies
         run: pip install -r .github/workflows/requirements.txt  # Optional, if you have dependencies
       - name: Run Python Script
-        run: python test.py  # Replace with your script filename
+        run: python test_sample.py  # Replace with your script filename
