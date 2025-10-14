@@ -17,6 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref || 'main' }}
+          persist-credentials: true  # keep GITHUB_TOKEN for push [web:47]
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -32,15 +33,19 @@ jobs:
         shell: bash
         run: |
           set -eo pipefail
-          echo "Repo root:"; pwd
+          repo_root="$(pwd)"
+          out_root="${repo_root}/outputs"
+          mkdir -p "$out_root"
+          echo "Repo root: $repo_root"
+          echo "Output root: $out_root"
           echo "Python version:"; python --version || python3 --version || true
           while IFS= read -r -d '' pyfile; do
-            out="${pyfile}.out.md"
+            # Mirror path under outputs/, replace leading ./ if present
+            rel="${pyfile#./}"
+            out="${out_root}/${rel}.out.md"
             mkdir -p "$(dirname "$out")"
-            # Write header and opening fence without using literal ``` lines
-            printf "# Output for %s\n\n" "$pyfile" > "$out"
+            printf "# Output for %s\n\n" "$rel" > "$out"
             printf "%s\n" '```'
-            # Run script, capture exit code, avoid failing the job
             if command -v python >/dev/null 2>&1; then
               set +e; python "$pyfile" >> "$out" 2>&1; rc=$?; set -e
             else
@@ -51,20 +56,29 @@ jobs:
             echo "Wrote $out"
           done < <(find . -type f -name "*.py" -not -path "./.venv/*" -print0)
 
-      - name: Verify generated outputs
+      - name: Verify generated outputs exist
         shell: bash
         run: |
-          echo "Changed files:"
+          echo "git status:"
           git status --porcelain
-          echo "Listing outputs:"
-          find . -type f -name "*.py.out.md" -not -path "./.venv/*" -print
+          echo "find outputs:"
+          find outputs -type f -name "*.py.out.md" -print
+          echo "Sample content:"
+          find outputs -type f -name "*.py.out.md" -print -quit | xargs -r -I{} sh -c 'echo "===" {}; head -n 20 "{}"'
+
+      - name: Stage outputs with git add
+        shell: bash
+        run: |
+          git add outputs/**/*.py.out.md || true
+          git status --porcelain
 
       - name: Commit outputs to main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: stefanzweifel/git-auto-commit-action@v6
         with:
           commit_message: "chore: update per-file Python outputs"
-          file_pattern: "**/*.py.out.md"
+          # Use a broad pattern to avoid missing files due to glob differences
+          file_pattern: "outputs"
           disable_globbing: true
 
       - name: Create/update PR with outputs
@@ -73,9 +87,9 @@ jobs:
         with:
           commit-message: "chore: update per-file Python outputs"
           title: "Update per-file Python outputs"
-          body: "Automated update of .py.out.md files."
+          body: "Automated update of outputs/*.py.out.md files."
           branch: ci/update-python-outputs
           base: main
           labels: ci, automation
           add-paths: |
-            **/*.py.out.md
+            outputs
