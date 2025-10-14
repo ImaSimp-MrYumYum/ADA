@@ -16,8 +16,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # On push to main, this checks out main; on PR, checks out the PR branch
-          ref: ${{ github.head_ref || 'main' }}  # safe default [web:47]
+          ref: ${{ github.head_ref || 'main' }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -38,17 +37,17 @@ jobs:
           while IFS= read -r -d '' pyfile; do
             out="${pyfile}.out.md"
             mkdir -p "$(dirname "$out")"
-            {
-              printf "# Output for %s\n\n" "$pyfile"
-              echo '```
-              if command -v python >/dev/null 2>&1; then
-                set +e; python "$pyfile" 2>&1; rc=$?; set -e
-              else
-                set +e; python3 "$pyfile" 2>&1; rc=$?; set -e
-              fi
-              printf "\n(exit code: %d)\n" "$rc"
-              echo '```'
-            } > "$out"
+            # Write header and opening fence without using literal ``` lines
+            printf "# Output for %s\n\n" "$pyfile" > "$out"
+            printf "%s\n" '```
+            # Run script, capture exit code, avoid failing the job
+            if command -v python >/dev/null 2>&1; then
+              set +e; python "$pyfile" >> "$out" 2>&1; rc=$?; set -e
+            else
+              set +e; python3 "$pyfile" >> "$out" 2>&1; rc=$?; set -e
+            fi
+            printf "\n(exit code: %d)\n" "$rc" >> "$out"
+            printf "%s\n" '```' >> "$out"
             echo "Wrote $out"
           done < <(find . -type f -name "*.py" -not -path "./.venv/*" -print0)
 
@@ -60,7 +59,6 @@ jobs:
           echo "Listing outputs:"
           find . -type f -name "*.py.out.md" -not -path "./.venv/*" -print
 
-      # Path A: push event on main -> commit directly to main
       - name: Commit outputs to main
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: stefanzweifel/git-auto-commit-action@v6
@@ -69,7 +67,6 @@ jobs:
           file_pattern: "**/*.py.out.md"
           disable_globbing: true
 
-      # Path B: pull_request event -> create/update a PR with changes into main
       - name: Create/update PR with outputs
         if: github.event_name == 'pull_request'
         uses: peter-evans/create-pull-request@v6
