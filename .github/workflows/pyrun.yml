@@ -2,24 +2,45 @@ name: Run All Python Scripts
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
+
+permissions:
+  contents: write  # allow committing generated outputs [web:23]
 
 jobs:
   run-python:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}  # needed for PRs to commit back to the PR branch [web:23]
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - name: Install dependencies
         run: |
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      - name: Run all Python files
+
+      - name: Run each .py and write per-file outputs
+        shell: bash
         run: |
-          for pyfile in $(find . -name "*.py" -not -path "./.venv/*"); do
-            echo "Running $pyfile"
-            python "$pyfile"
-          done
+          while IFS= read -r -d '' pyfile; do
+            out="${pyfile}.out.md"
+            mkdir -p "$(dirname "$out")"
+            {
+              echo "# Output for $pyfile"
+              echo
+              echo '```
+              # Capture both stdout and stderr; never fail the workflow on nonzero exit
+              python "$pyfile" 2>&1 || true
+              echo '```'
+            } > "$out"
+            echo "Wrote $out"
+          done < <(find . -type f -name "*.py" -not -path "./.venv/*" -print0)
+
+      - name: Commit outputs
+        uses: stefanzweifel/git-auto-commit-action@v6
+        with:
+          commit_message: "chore: update per-file Python outputs"
+          file_pattern: "**/*.py.out.md"
