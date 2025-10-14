@@ -6,7 +6,8 @@ on:
   pull_request:
 
 permissions:
-  contents: write  # required to push generated files back [web:2]
+  contents: write
+  pull-requests: write
 
 jobs:
   run-python:
@@ -15,18 +16,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # For PRs, ensure commits go back to the PR branch
-          ref: ${{ github.head_ref }}  # no effect on push, helpful on PRs from same repo [web:2]
+          # On push to main, this checks out main; on PR, checks out the PR branch
+          ref: ${{ github.head_ref || 'main' }}  # safe default [web:47]
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'  # adjust if needed [web:2]
+          python-version: '3.10'
 
       - name: Install dependencies
+        shell: bash
         run: |
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        shell: bash
 
       - name: Run each .py and write per-file outputs
         shell: bash
@@ -34,24 +35,16 @@ jobs:
           set -eo pipefail
           echo "Repo root:"; pwd
           echo "Python version:"; python --version || python3 --version || true
-          # Find and process all .py excluding .venv
           while IFS= read -r -d '' pyfile; do
             out="${pyfile}.out.md"
             mkdir -p "$(dirname "$out")"
             {
               printf "# Output for %s\n\n" "$pyfile"
               echo '```
-              # Run script and capture both stdout and stderr; don't fail the job on script errors
               if command -v python >/dev/null 2>&1; then
-                set +e
-                python "$pyfile" 2>&1
-                rc=$?
-                set -e
+                set +e; python "$pyfile" 2>&1; rc=$?; set -e
               else
-                set +e
-                python3 "$pyfile" 2>&1
-                rc=$?
-                set -e
+                set +e; python3 "$pyfile" 2>&1; rc=$?; set -e
               fi
               printf "\n(exit code: %d)\n" "$rc"
               echo '```'
@@ -67,10 +60,25 @@ jobs:
           echo "Listing outputs:"
           find . -type f -name "*.py.out.md" -not -path "./.venv/*" -print
 
-      - name: Commit outputs
+      # Path A: push event on main -> commit directly to main
+      - name: Commit outputs to main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: stefanzweifel/git-auto-commit-action@v6
         with:
           commit_message: "chore: update per-file Python outputs"
           file_pattern: "**/*.py.out.md"
-          # disable_globbing avoids the shell interfering with the glob; action expands it internally
           disable_globbing: true
+
+      # Path B: pull_request event -> create/update a PR with changes into main
+      - name: Create/update PR with outputs
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore: update per-file Python outputs"
+          title: "Update per-file Python outputs"
+          body: "Automated update of .py.out.md files."
+          branch: ci/update-python-outputs
+          base: main
+          labels: ci, automation
+          add-paths: |
+            **/*.py.out.md
